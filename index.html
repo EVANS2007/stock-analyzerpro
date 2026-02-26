@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>StockAI · 智能股票分析终端</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #080808; color: #e8e8e8; font-family: 'Helvetica Neue', sans-serif; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+  input::placeholder { color: #3a3a3a; }
+  button { font-family: inherit; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.3s ease forwards; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+const {
+  AreaChart, Area, BarChart, Bar, LineChart, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine
+} = Recharts;
+
+// ── Data ──────────────────────────────────────────────────────────────────────
+const STOCKS = {
+  AAPL:     { name:"苹果公司",   price:189.5, pe:28.4, pb:43.2, mktcap:"2.94T",     sector:"科技",        roe:"147%",  revenue:"3834亿", netIncome:"970亿",  debtRatio:"31%", divYield:"0.5%",  eps:"6.67",  beta:"1.24", grossMargin:"43.8%", netMargin:"25.3%", roa:"28.3%", currentRatio:"0.99" },
+  TSLA:     { name:"特斯拉",     price:248.3, pe:65.2, pb:12.8, mktcap:"791B",      sector:"汽车/新能源",  roe:"19.4%", revenue:"967亿",  netIncome:"150亿",  debtRatio:"18%", divYield:"—",    eps:"3.81",  beta:"2.31", grossMargin:"18.2%", netMargin:"15.5%", roa:"9.1%",  currentRatio:"1.73" },
+  NVDA:     { name:"英伟达",     price:875.4, pe:52.1, pb:28.7, mktcap:"2.16T",     sector:"半导体",      roe:"55.3%", revenue:"609亿",  netIncome:"298亿",  debtRatio:"14%", divYield:"0.03%", eps:"16.84", beta:"1.97", grossMargin:"72.7%", netMargin:"48.9%", roa:"45.2%", currentRatio:"4.17" },
+  BABA:     { name:"阿里巴巴",   price:77.2,  pe:14.3, pb:1.8,  mktcap:"198B",      sector:"电商/云计算",  roe:"12.8%", revenue:"9315亿", netIncome:"711亿",  debtRatio:"22%", divYield:"—",    eps:"5.41",  beta:"0.87", grossMargin:"37.4%", netMargin:"7.6%",  roa:"6.3%",  currentRatio:"1.42" },
+  "600519": { name:"贵州茅台",   price:1680,  pe:29.5, pb:8.4,  mktcap:"2.1T(RMB)", sector:"白酒",        roe:"31.2%", revenue:"1505亿", netIncome:"747亿",  debtRatio:"8%",  divYield:"2.8%",  eps:"59.49", beta:"0.62", grossMargin:"91.9%", netMargin:"49.6%", roa:"26.1%", currentRatio:"2.85" },
+};
+
+const QUARTERLY = [
+  { q:"Q1'23", revenue:1174, netIncome:241, eps:1.52 },
+  { q:"Q2'23", revenue:1218, netIncome:198, eps:1.26 },
+  { q:"Q3'23", revenue:1346, netIncome:307, eps:1.94 },
+  { q:"Q4'23", revenue:1196, netIncome:224, eps:1.43 },
+  { q:"Q1'24", revenue:1353, netIncome:289, eps:1.85 },
+  { q:"Q2'24", revenue:1498, netIncome:341, eps:2.19 },
+];
+
+function genPrice(base, days = 90) {
+  let p = base;
+  const now = new Date();
+  return Array.from({ length: days + 1 }, (_, i) => {
+    const d = new Date(now); d.setDate(d.getDate() - (days - i));
+    p = Math.max(p + (Math.random() - 0.48) * p * 0.025, base * 0.5);
+    const o = p + (Math.random() - 0.5) * p * 0.01;
+    const h = Math.max(p, o) * (1 + Math.random() * 0.015);
+    const l = Math.min(p, o) * (1 - Math.random() * 0.015);
+    return { date: d.toLocaleDateString("zh-CN",{month:"numeric",day:"numeric"}), close:+p.toFixed(2), open:+o.toFixed(2), high:+h.toFixed(2), low:+l.toFixed(2), volume: Math.floor(Math.random()*5e7+1e7) };
+  });
+}
+
+function addIndicators(data) {
+  return data.map((d, i) => {
+    const s20 = data.slice(Math.max(0,i-19),i+1), s60 = data.slice(Math.max(0,i-59),i+1);
+    const ma20 = +(s20.reduce((a,x)=>a+x.close,0)/s20.length).toFixed(2);
+    const ma60 = +(s60.reduce((a,x)=>a+x.close,0)/s60.length).toFixed(2);
+    let rsi = null;
+    if (i >= 14) {
+      let g=0,l=0; for(let j=i-13;j<=i;j++){const df=data[j].close-data[j-1].close; df>0?g+=df:l-=df;}
+      rsi = +(100-100/(1+g/(l||0.0001))).toFixed(1);
+    }
+    const k12=2/13,k26=2/27;
+    let e12=data[0].close,e26=data[0].close;
+    for(let j=1;j<=i;j++){e12=data[j].close*k12+e12*(1-k12);e26=data[j].close*k26+e26*(1-k26);}
+    return {...d, ma20, ma60, rsi, macd:+(e12-e26).toFixed(3)};
+  });
+}
+
+// ── Components ────────────────────────────────────────────────────────────────
+const C = {
+  card: { background:"rgba(255,255,255,0.025)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:10, padding:20 },
+  cardGreen: { background:"rgba(0,255,136,0.04)", border:"1px solid rgba(0,255,136,0.18)", borderRadius:10, padding:20 },
+};
+
+function MetricCard({ label, value, sub, green }) {
+  return (
+    <div style={{ background: green?"rgba(0,255,136,0.06)":"rgba(255,255,255,0.03)", border:`1px solid ${green?"rgba(0,255,136,0.3)":"rgba(255,255,255,0.07)"}`, borderRadius:8, padding:"13px 15px" }}>
+      <div style={{ fontSize:10, color:"#777", textTransform:"uppercase", letterSpacing:"0.1em", fontFamily:"monospace", marginBottom:5 }}>{label}</div>
+      <div style={{ fontSize:19, fontWeight:700, color: green?"#00ff88":"#f0f0f0", fontFamily:"monospace" }}>{value}</div>
+      {sub && <div style={{ fontSize:10, color:"#555", marginTop:3 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function Tab({ active, onClick, children }) {
+  return (
+    <button onClick={onClick} style={{ background: active?"rgba(0,255,136,0.12)":"transparent", border: active?"1px solid rgba(0,255,136,0.4)":"1px solid transparent", borderRadius:6, color: active?"#00ff88":"#777", cursor:"pointer", fontSize:12, fontFamily:"monospace", fontWeight: active?600:400, padding:"6px 13px", transition:"all 0.15s", letterSpacing:"0.04em" }}>
+      {children}
+    </button>
+  );
+}
+
+const TT = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background:"#0c0c0c", border:"1px solid rgba(0,255,136,0.25)", borderRadius:6, padding:"9px 13px", fontSize:11, fontFamily:"monospace" }}>
+      <div style={{ color:"#666", marginBottom:4 }}>{label}</div>
+      {payload.map((p,i) => <div key={i} style={{ color: p.color||"#00ff88" }}>{p.name}: {typeof p.value==="number"?p.value.toLocaleString():p.value}</div>)}
+    </div>
+  );
+};
+
+// ── App ───────────────────────────────────────────────────────────────────────
+function App() {
+  const [ticker, setTicker]     = useState("AAPL");
+  const [input, setInput]       = useState("AAPL");
+  const [tab, setTab]           = useState("overview");
+  const [chart, setChart]       = useState("price");
+  const [priceData, setPriceData] = useState([]);
+
+  const stock = STOCKS[ticker] || STOCKS.AAPL;
+
+  useEffect(() => {
+    setPriceData(addIndicators(genPrice(stock.price)));
+  }, [ticker]);
+
+  const last     = priceData[priceData.length-1];
+  const prev     = priceData[priceData.length-2];
+  const curPrice = last?.close || stock.price;
+  const chg      = prev ? curPrice - prev.close : 0;
+  const chgPct   = prev ? ((chg/prev.close)*100).toFixed(2) : "0.00";
+  const isUp     = chg >= 0;
+  const display  = priceData.slice(-60);
+  const pMin     = display.length ? Math.min(...display.map(d=>d.low))*0.995 : 0;
+  const pMax     = display.length ? Math.max(...display.map(d=>d.high))*1.005 : 0;
+
+  const search = () => {
+    const t = input.trim().toUpperCase();
+    if (STOCKS[t]) { setTicker(t); setInput(t); }
+    else if (STOCKS[input.trim()]) { setTicker(input.trim()); }
+    else alert("暂支持：AAPL · TSLA · NVDA · BABA · 600519");
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#080808" }}>
+      {/* scanline */}
+      <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:1, backgroundImage:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.025) 2px,rgba(0,0,0,0.025) 4px)" }} />
+
+      <div style={{ maxWidth:1160, margin:"0 auto", padding:"0 20px 60px", position:"relative", zIndex:2 }}>
+
+        {/* ── Header ── */}
+        <header style={{ borderBottom:"1px solid rgba(255,255,255,0.06)", padding:"15px 0", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:11 }}>
+            <div style={{ width:34, height:34, background:"linear-gradient(135deg,#00ff88,#00b8ff)", borderRadius:9, display:"flex", alignItems:"center", justifyContent:"center", fontSize:17 }}>📈</div>
+            <div>
+              <div style={{ fontSize:15, fontWeight:800, color:"#fff", letterSpacing:"-0.02em" }}>StockAI</div>
+              <div style={{ fontSize:10, color:"#444", fontFamily:"monospace" }}>智能股票分析终端</div>
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            <input value={input} onChange={e=>setInput(e.target.value.toUpperCase())} onKeyDown={e=>e.key==="Enter"&&search()}
+              placeholder="股票代码  AAPL / 600519"
+              style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, color:"#e8e8e8", fontFamily:"monospace", fontSize:13, outline:"none", padding:"8px 14px", width:220 }} />
+            <button onClick={search} style={{ background:"linear-gradient(135deg,#00ff88,#00cc6a)", border:"none", borderRadius:8, color:"#000", cursor:"pointer", fontSize:13, fontWeight:700, padding:"8px 18px" }}>搜索</button>
+          </div>
+        </header>
+
+        {/* ── Hero ── */}
+        <div style={{ padding:"22px 0 18px" }} className="fade-in">
+          <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:8 }}>
+            <span style={{ fontSize:26, fontWeight:800, color:"#fff", letterSpacing:"-0.03em" }}>{stock.name}</span>
+            <span style={{ fontSize:12, color:"#777", fontFamily:"monospace", background:"rgba(255,255,255,0.06)", borderRadius:4, padding:"2px 8px" }}>{ticker}</span>
+            <span style={{ fontSize:11, color:"#555", background:"rgba(255,255,255,0.04)", borderRadius:4, padding:"2px 8px" }}>{stock.sector}</span>
+          </div>
+          <div style={{ display:"flex", alignItems:"baseline", gap:12, flexWrap:"wrap" }}>
+            <span style={{ fontSize:44, fontWeight:700, fontFamily:"monospace", color:"#fff", letterSpacing:"-0.02em" }}>{curPrice.toFixed(2)}</span>
+            <span style={{ fontSize:17, fontFamily:"monospace", fontWeight:600, color: isUp?"#00ff88":"#ff4d6d", background: isUp?"rgba(0,255,136,0.08)":"rgba(255,77,109,0.08)", borderRadius:6, padding:"3px 11px" }}>
+              {isUp?"▲":"▼"} {Math.abs(chg).toFixed(2)} ({isUp?"+":""}{chgPct}%)
+            </span>
+          </div>
+        </div>
+
+        {/* ── Tabs ── */}
+        <div style={{ display:"flex", gap:6, marginBottom:22, borderBottom:"1px solid rgba(255,255,255,0.06)", paddingBottom:14, flexWrap:"wrap" }}>
+          {[["overview","📊 基本面"],["chart","📉 技术分析"],["financials","📋 财报"]].map(([t,l]) => (
+            <Tab key={t} active={tab===t} onClick={()=>setTab(t)}>{l}</Tab>
+          ))}
+        </div>
+
+        {/* ── OVERVIEW ── */}
+        {tab==="overview" && (
+          <div className="fade-in">
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:10, marginBottom:24 }}>
+              <MetricCard label="市值"       value={stock.mktcap}      green />
+              <MetricCard label="市盈率 P/E" value={stock.pe}          sub="越低越便宜" />
+              <MetricCard label="市净率 P/B" value={stock.pb} />
+              <MetricCard label="ROE"        value={stock.roe}         sub="越高越优质" />
+              <MetricCard label="EPS"        value={`$${stock.eps}`}   sub="每股收益" />
+              <MetricCard label="Beta"       value={stock.beta}        sub="相对市场波动" />
+              <MetricCard label="股息率"     value={stock.divYield} />
+              <MetricCard label="资产负债率" value={stock.debtRatio}   sub="越低越安全" />
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
+              <div style={C.card}>
+                <div style={{ fontSize:11, color:"#777", marginBottom:14, fontFamily:"monospace", letterSpacing:"0.08em" }}>营收 vs 净利润（亿）</div>
+                <ResponsiveContainer width="100%" height={175}>
+                  <BarChart data={QUARTERLY} barGap={3}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                    <XAxis dataKey="q" tick={{fontSize:10,fill:"#555",fontFamily:"monospace"}} axisLine={false} tickLine={false} />
+                    <YAxis tick={{fontSize:10,fill:"#555",fontFamily:"monospace"}} axisLine={false} tickLine={false} />
+                    <Tooltip content={<TT/>} />
+                    <Bar dataKey="revenue"   name="营收"   fill="rgba(0,184,255,0.6)"  radius={[3,3,0,0]} />
+                    <Bar dataKey="netIncome" name="净利润" fill="rgba(0,255,136,0.7)"  radius={[3,3,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={C.card}>
+                <div style={{ fontSize:11, color:"#777", marginBottom:14, fontFamily:"monospace", letterSpacing:"0.08em" }}>EPS 每股收益趋势</div>
+                <ResponsiveContainer width="100%" height={175}>
+                  <AreaChart data={QUARTERLY}>
+                    <defs>
+                      <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#00ff88" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#00ff88" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                    <XAxis dataKey="q" tick={{fontSize:10,fill:"#555",fontFamily:"monospace"}} axisLine={false} tickLine={false} />
+                    <YAxis tick={{fontSize:10,fill:"#555",fontFamily:"monospace"}} axisLine={false} tickLine={false} />
+                    <Tooltip content={<TT/>} />
+                    <Area type="monotone" dataKey="eps" name="EPS" stroke="#00ff88" strokeWidth={2} fill="url(#eg)" dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── CHART ── */}
+        {tab==="chart" && (
+          <div className="fade-in">
+            <div style={{ display:"flex", gap:6, marginBottom:14, flexWrap:"wrap" }}>
+              {[["price","价格+均线"],["rsi","RSI"],["macd","MACD"],["volume","成交量"]].map(([c,l])=>(
+                <Tab key={c} active={chart===c} onClick={()=>setChart(c)}>{l}</Tab>
+              ))}
+            </div>
+            <div style={C.card}>
+              <ResponsiveContainer width="100%" height={310}>
+                {chart==="price" ? (
+                  <AreaChart data={display}>
+                    <defs>
+                      <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#00ff88" stopOpacity={0.15}/>
+                        <stop offset="95%" stopColor="#00ff88" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#444",fontFamily:"monospace"}} axisLine={false} tickLine={false} interval={9} />
+                    <YAxis domain={[pMin,pMax]} tick={{fontSize:10,fill:"#444",fontFamily:"monospace"}} axisLine={false} tickLine={false} />
+                    <Tooltip content={<TT/>} />
+                    <Area  type="monotone" dataKey="close" name="收盘价" stroke="#00ff88" strokeWidth={2} fill="url(#pg)" dot={false} />
+                    <Line  type="monotone" dataKey="ma20"  name="MA20"  stroke="#00b8ff" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                    <Line  type="monotone" dataKey="ma60"  name="MA60"  stroke="#ff9500" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                  </AreaChart>
+                ) : chart==="rsi" ? (
+                  <AreaChart data={display}>
+                    <defs>
+                      <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#a855f7" stopOpacity={0.25}/>
+                        <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#444",fontFamily:"monospace"}} axisLine={false} tickLine={false} interval={9} />
+                    <YAxis domain={[0,100]} tick={{fontSize:10,fill:"#444",fontFamily:"monospace"}} axisLine={false} tickLine={false} />
+                    <Tooltip content={<TT/>} />
+                    <ReferenceLine y={70} stroke="#ff4d6d" strokeDasharray="4 2" label={{value:"超买 70",fill:"#ff4d6d",fontSize:10}} />
+                    <ReferenceLine y={30} stroke="#00ff88" strokeDasharray="4 2" label={{value:"超卖 30",fill:"#00ff88",fontSize:10}} />
+                    <Area type="monotone" dataKey="rsi" name="RSI" stroke="#a855f7" strokeWidth={2} fill="url(#rg)" dot={false} />
+                  </AreaChart>
+                ) : chart==="macd" ? (
+                  <BarChart data={display}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#444",fontFamily:"monospace"}} axisLine={false} tickLine={false} interval={9} />
+                    <YAxis tick={{fontSize:10,fill:"#444",fontFamily:"monospace"}} axisLine={false} tickLine={false} />
+                    <Tooltip content={<TT/>} />
+                    <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" />
+                    <Bar dataKey="macd" name="MACD" fill="#00b8ff" radius={[2,2,0,0]} />
+                  </BarChart>
+                ) : (
+                  <BarChart data={display}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#444",fontFamily:"monospace"}} axisLine={false} tickLine={false} interval={9} />
+                    <YAxis tick={{fontSize:10,fill:"#444",fontFamily:"monospace"}} axisLine={false} tickLine={false} tickFormatter={v=>`${(v/1e6).toFixed(0)}M`} />
+                    <Tooltip content={<TT/>} />
+                    <Bar dataKey="volume" name="成交量" fill="rgba(0,184,255,0.45)" radius={[2,2,0,0]} />
+                  </BarChart>
+                )}
+              </ResponsiveContainer>
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginTop:14 }}>
+              <MetricCard label="52周最高" value={(curPrice*1.28).toFixed(2)} />
+              <MetricCard label="52周最低" value={(curPrice*0.72).toFixed(2)} />
+              <MetricCard label="RSI(14)"  value={display[display.length-1]?.rsi||"--"} />
+              <MetricCard label="20日均量" value="42M" />
+            </div>
+            <div style={{ display:"flex", gap:16, marginTop:14, fontSize:11, fontFamily:"monospace", color:"#555" }}>
+              <span style={{ color:"#00ff88" }}>● 收盘价</span>
+              <span style={{ color:"#00b8ff" }}>● MA20</span>
+              <span style={{ color:"#ff9500" }}>● MA60</span>
+            </div>
+          </div>
+        )}
+
+        {/* ── FINANCIALS ── */}
+        {tab==="financials" && (
+          <div className="fade-in">
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14, marginBottom:16 }}>
+              <div style={C.card}>
+                <div style={{ fontSize:11, color:"#777", marginBottom:14, fontFamily:"monospace", letterSpacing:"0.08em" }}>📋 季度财报摘要</div>
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, fontFamily:"monospace" }}>
+                  <thead>
+                    <tr>{["季度","营收(亿)","净利润","EPS"].map(h=>(
+                      <th key={h} style={{ textAlign:"right", color:"#444", fontWeight:500, paddingBottom:10, borderBottom:"1px solid rgba(255,255,255,0.06)" }}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {QUARTERLY.map((q,i)=>(
+                      <tr key={i} style={{ borderBottom:"1px solid rgba(255,255,255,0.03)" }}>
+                        <td style={{ padding:"8px 0", color:"#888" }}>{q.q}</td>
+                        <td style={{ textAlign:"right", color:"#ddd" }}>{q.revenue}</td>
+                        <td style={{ textAlign:"right", color: q.netIncome>250?"#00ff88":"#ddd" }}>{q.netIncome}</td>
+                        <td style={{ textAlign:"right", color:"#00b8ff" }}>${q.eps}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                <div style={C.card}>
+                  <div style={{ fontSize:11, color:"#777", marginBottom:12, fontFamily:"monospace" }}>💰 盈利能力</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                    <MetricCard label="毛利率" value={stock.grossMargin} />
+                    <MetricCard label="净利率" value={stock.netMargin} />
+                    <MetricCard label="ROE"    value={stock.roe} green />
+                    <MetricCard label="ROA"    value={stock.roa} />
+                  </div>
+                </div>
+                <div style={C.card}>
+                  <div style={{ fontSize:11, color:"#777", marginBottom:12, fontFamily:"monospace" }}>🏦 资产负债</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                    <MetricCard label="负债率"   value={stock.debtRatio} />
+                    <MetricCard label="流动比率" value={stock.currentRatio} />
+                    <MetricCard label="股息率"   value={stock.divYield} />
+                    <MetricCard label="Beta"     value={stock.beta} />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style={C.cardGreen}>
+              <div style={{ fontSize:13, fontWeight:600, color:"#00ff88", marginBottom:8, fontFamily:"monospace" }}>📝 财报综合解读</div>
+              <div style={{ fontSize:13, color:"#aaa", lineHeight:1.75 }}>
+                <strong style={{color:"#ddd"}}>{stock.name}</strong> 近两季度营收持续增长，Q2 2024 达 1498 亿，同比 +23%。
+                毛利率 {stock.grossMargin}，净利率 {stock.netMargin}，盈利质量{parseFloat(stock.netMargin)>20?"优秀":"稳定"}。
+                ROE {stock.roe} 显示资本运用效率{parseFloat(stock.roe)>30?"极强":"良好"}。
+                资产负债率仅 {stock.debtRatio}，财务结构{parseFloat(stock.debtRatio)<20?"非常健康":"稳健"}。
+                <span style={{color:"#00ff88"}}> 综合来看基本面扎实，成长趋势明确。</span>
+                <br/><span style={{fontSize:11,color:"#444",marginTop:6,display:"block"}}>⚠️ 以上为模拟数据，仅供学习演示，不构成投资建议。</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ marginTop:40, borderTop:"1px solid rgba(255,255,255,0.05)", paddingTop:14, display:"flex", justifyContent:"space-between", flexWrap:"wrap", gap:8 }}>
+          <span style={{ fontSize:11, color:"#333", fontFamily:"monospace" }}>StockAI · 数据仅供参考，不构成投资建议</span>
+          <span style={{ fontSize:11, color:"#2a2a2a", fontFamily:"monospace" }}>Built with React + Recharts</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
