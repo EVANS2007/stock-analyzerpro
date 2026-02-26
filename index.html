@@ -105,6 +105,13 @@ html,body{height:100%;background:#060608;color:#e2e2e8;font-family:'Helvetica Ne
 input::placeholder,select{font-family:inherit}
 @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .fade{animation:fadeUp .2s ease forwards}
+.hidden{display:none!important}
+@keyframes flash-up{0%{background:rgba(0,232,122,.25)}100%{background:transparent}}
+@keyframes flash-dn{0%{background:rgba(255,61,90,.25)}100%{background:transparent}}
+.flash-up{animation:flash-up .6s ease}
+.flash-dn{animation:flash-dn .6s ease}
+.live-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:5px;animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 </style>
 </head>
 <body>
@@ -113,7 +120,7 @@ input::placeholder,select{font-family:inherit}
   <div class="sidebar">
     <div class="sidebar-header">
       <div class="logo-icon">📈</div>
-      <div><div class="logo-text">StockAI Pro</div><div class="logo-sub">INTELLIGENT TERMINAL</div></div>
+      <div><div class="logo-text">StockAI Pro</div><div class="logo-sub"><span class="live-dot"></span>LIVE · INTELLIGENT TERMINAL</div></div>
     </div>
     <div class="search-wrap">
       <div class="search-box">
@@ -189,36 +196,40 @@ input::placeholder,select{font-family:inherit}
 <div class="toast" id="toast"></div>
 
 <script>
+// ── 股票数据库（2026年2月最新数据）──────────────────────────────────────────
 const DB={
-  AAPL: {n:"苹果",  m:"us",s:"科技",      p:189.5, pe:28.4,pb:43.2,cap:"2.94T",roe:"147%", eps:"6.67", b:"1.24",gm:"43.8%",nm:"25.3%",dr:"31%",dy:"0.5%",ra:"28.3%",cr:"0.99"},
-  MSFT: {n:"微软",  m:"us",s:"科技",      p:415.3, pe:36.2,pb:13.1,cap:"3.08T",roe:"38.5%",eps:"11.46",b:"0.91",gm:"69.4%",nm:"35.6%",dr:"19%",dy:"0.7%",ra:"18.2%",cr:"1.35"},
-  NVDA: {n:"英伟达",m:"us",s:"半导体",    p:875.4, pe:52.1,pb:28.7,cap:"2.16T",roe:"55.3%",eps:"16.84",b:"1.97",gm:"72.7%",nm:"48.9%",dr:"14%",dy:"0.03%",ra:"45.2%",cr:"4.17"},
-  GOOGL:{n:"谷歌",  m:"us",s:"科技",      p:175.8, pe:24.6,pb:6.8, cap:"2.17T",roe:"28.7%",eps:"7.14", b:"1.06",gm:"56.9%",nm:"23.5%",dr:"11%",dy:"—",   ra:"15.4%",cr:"2.11"},
-  AMZN: {n:"亚马逊",m:"us",s:"电商/云",   p:198.7, pe:43.8,pb:8.2, cap:"2.08T",roe:"19.4%",eps:"4.53", b:"1.15",gm:"47.6%",nm:"5.3%", dr:"28%",dy:"—",   ra:"4.8%", cr:"1.07"},
-  META: {n:"Meta",  m:"us",s:"社交媒体",  p:524.6, pe:27.3,pb:8.4, cap:"1.32T",roe:"31.6%",eps:"19.21",b:"1.28",gm:"81.8%",nm:"29.0%",dr:"14%",dy:"0.4%",ra:"19.3%",cr:"2.67"},
-  TSLA: {n:"特斯拉",m:"us",s:"新能源车",  p:248.3, pe:65.2,pb:12.8,cap:"791B", roe:"19.4%",eps:"3.81", b:"2.31",gm:"18.2%",nm:"15.5%",dr:"18%",dy:"—",   ra:"9.1%", cr:"1.73"},
-  NFLX: {n:"奈飞",  m:"us",s:"流媒体",    p:718.5, pe:45.2,pb:16.3,cap:"308B", roe:"35.8%",eps:"15.92",b:"1.33",gm:"43.1%",nm:"16.9%",dr:"35%",dy:"—",   ra:"10.4%",cr:"1.16"},
-  BABA: {n:"阿里",  m:"us",s:"电商/云",   p:77.2,  pe:14.3,pb:1.8, cap:"198B", roe:"12.8%",eps:"5.41", b:"0.87",gm:"37.4%",nm:"7.6%", dr:"22%",dy:"—",   ra:"6.3%", cr:"1.42"},
-  PDD:  {n:"拼多多",m:"us",s:"电商",      p:142.4, pe:17.8,pb:5.2, cap:"197B", roe:"32.4%",eps:"8.00", b:"0.94",gm:"61.3%",nm:"25.8%",dr:"8%", dy:"—",   ra:"18.2%",cr:"2.34"},
-  BIDU: {n:"百度",  m:"us",s:"AI/搜索",   p:89.4,  pe:13.2,pb:1.1, cap:"31B",  roe:"8.4%", eps:"6.77", b:"0.82",gm:"53.1%",nm:"12.4%",dr:"24%",dy:"—",   ra:"5.6%", cr:"2.76"},
-  JD:   {n:"京东",  m:"us",s:"电商",      p:28.6,  pe:22.1,pb:1.4, cap:"44B",  roe:"6.4%", eps:"1.29", b:"0.76",gm:"8.9%", nm:"2.1%", dr:"31%",dy:"—",   ra:"2.8%", cr:"1.08"},
-  V:    {n:"VISA",  m:"us",s:"支付",      p:289.6, pe:31.2,pb:13.8,cap:"591B", roe:"44.2%",eps:"9.29", b:"0.93",gm:"80.4%",nm:"51.1%",dr:"31%",dy:"0.8%",ra:"19.6%",cr:"1.54"},
-  JPM:  {n:"摩根大通",m:"us",s:"银行",    p:220.4, pe:12.4,pb:2.1, cap:"635B", roe:"16.8%",eps:"17.78",b:"1.12",gm:"—",    nm:"27.3%",dr:"—",  dy:"2.2%",ra:"1.4%", cr:"—"},
-  ORCL: {n:"甲骨文",m:"us",s:"企业软件",  p:134.6, pe:34.1,pb:—,   cap:"369B", roe:"—",    eps:"3.95", b:"0.97",gm:"71.8%",nm:"21.4%",dr:"—",  dy:"1.3%",ra:"6.2%", cr:"0.84"},
-  "600519":{n:"贵州茅台",m:"cn",s:"白酒",      p:1680,pe:29.5,pb:8.4, cap:"2.1T", roe:"31.2%",eps:"59.49",b:"0.62",gm:"91.9%",nm:"49.6%",dr:"8%", dy:"2.8%",ra:"26.1%",cr:"2.85"},
-  "000858":{n:"五粮液",  m:"cn",s:"白酒",      p:138.4,pe:18.2,pb:4.8,cap:"540B", roe:"28.3%",eps:"7.60", b:"0.71",gm:"75.1%",nm:"34.8%",dr:"12%",dy:"3.5%",ra:"22.4%",cr:"3.12"},
-  "601318":{n:"中国平安",m:"cn",s:"保险",      p:45.2, pe:8.4, pb:1.1,cap:"815B", roe:"13.2%",eps:"5.38", b:"0.84",gm:"—",    nm:"10.4%",dr:"—",  dy:"5.2%",ra:"1.2%", cr:"—"},
-  "600036":{n:"招商银行",m:"cn",s:"银行",      p:34.8, pe:5.8, pb:0.9,cap:"876B", roe:"15.6%",eps:"6.00", b:"0.78",gm:"—",    nm:"33.4%",dr:"—",  dy:"5.8%",ra:"1.3%", cr:"—"},
-  "300750":{n:"宁德时代",m:"cn",s:"新能源",    p:185.6,pe:22.4,pb:4.2,cap:"812B", roe:"18.7%",eps:"8.28", b:"1.14",gm:"22.8%",nm:"11.2%",dr:"31%",dy:"1.2%",ra:"7.4%", cr:"1.38"},
-  "002594":{n:"比亚迪",  m:"cn",s:"新能源车",  p:238.6,pe:24.3,pb:4.1,cap:"693B", roe:"16.9%",eps:"9.82", b:"1.08",gm:"20.2%",nm:"5.1%", dr:"42%",dy:"0.8%",ra:"3.8%", cr:"0.98"},
-  "601888":{n:"中国中免",m:"cn",s:"零售",      p:68.4, pe:21.6,pb:3.8,cap:"143B", roe:"17.8%",eps:"3.17", b:"0.88",gm:"32.4%",nm:"12.1%",dr:"18%",dy:"1.8%",ra:"8.4%", cr:"1.24"},
-  "000001":{n:"平安银行",m:"cn",s:"银行",      p:11.2, pe:4.6, pb:0.6,cap:"218B", roe:"12.4%",eps:"2.43", b:"0.91",gm:"—",    nm:"28.6%",dr:"—",  dy:"4.9%",ra:"0.9%", cr:"—"},
-  "0700": {n:"腾讯",     m:"hk",s:"科技/游戏", p:389.8,pe:18.6,pb:3.4,cap:"3.73T",roe:"18.2%",eps:"20.96",b:"0.82",gm:"48.2%",nm:"27.4%",dr:"28%",dy:"0.9%",ra:"8.6%", cr:"1.68"},
-  "9988": {n:"阿里(HK)", m:"hk",s:"电商/云",   p:78.4, pe:14.1,pb:1.7,cap:"1.54T",roe:"12.4%",eps:"5.56", b:"0.85",gm:"37.1%",nm:"7.4%", dr:"22%",dy:"—",   ra:"6.1%", cr:"1.44"},
-  "3690": {n:"美团",     m:"hk",s:"本地服务",  p:138.2,pe:28.4,pb:5.2,cap:"852B", roe:"18.4%",eps:"4.87", b:"0.96",gm:"24.6%",nm:"8.2%", dr:"24%",dy:"—",   ra:"6.8%", cr:"1.54"},
-  "1299": {n:"友邦保险", m:"hk",s:"保险",      p:52.8, pe:19.4,pb:2.1,cap:"598B", roe:"10.8%",eps:"2.72", b:"0.74",gm:"—",    nm:"14.2%",dr:"—",  dy:"2.8%",ra:"2.4%", cr:"—"},
-  "0941": {n:"中国移动", m:"hk",s:"通信",      p:72.4, pe:10.2,pb:1.2,cap:"1.52T",roe:"11.4%",eps:"7.10", b:"0.58",gm:"28.4%",nm:"14.8%",dr:"14%",dy:"6.8%",ra:"7.2%", cr:"1.22"},
-  "2318": {n:"平安(HK)", m:"hk",s:"保险",      p:38.6, pe:7.8, pb:0.9,cap:"700B", roe:"12.8%",eps:"4.95", b:"0.81",gm:"—",    nm:"10.1%",dr:"—",  dy:"5.6%",ra:"1.1%", cr:"—"},
+  // 美股 - 价格/PE/市值均取自 2026年2月最新数据
+  AAPL: {n:"苹果",    m:"us",s:"科技",      p:272.1, pe:34.5, pb:52.6,cap:"4.00T",roe:"147%", eps:"7.88", b:"1.20",gm:"46.2%",nm:"26.4%",dr:"28%",dy:"0.5%",ra:"29.1%",cr:"1.04"},
+  MSFT: {n:"微软",    m:"us",s:"科技",      p:389.0, pe:24.3, pb:11.8,cap:"2.89T",roe:"36.2%",eps:"16.01",b:"0.90",gm:"69.8%",nm:"36.7%",dr:"17%",dy:"0.8%",ra:"18.8%",cr:"1.28"},
+  NVDA: {n:"英伟达",  m:"us",s:"半导体",    p:192.9, pe:47.7, pb:38.4,cap:"4.69T",roe:"123%", eps:"4.04", b:"1.85",gm:"74.6%",nm:"55.9%",dr:"12%",dy:"0.03%",ra:"58.3%",cr:"4.17"},
+  GOOGL:{n:"谷歌",    m:"us",s:"科技",      p:310.9, pe:28.8, pb:8.2, cap:"3.76T",roe:"31.8%",eps:"10.79",b:"1.05",gm:"58.2%",nm:"28.5%",dr:"8%", dy:"—",   ra:"18.4%",cr:"2.34"},
+  AMZN: {n:"亚马逊",  m:"us",s:"电商/云",   p:208.6, pe:29.1, pb:8.6, cap:"2.24T",roe:"24.8%",eps:"7.17", b:"1.12",gm:"48.9%",nm:"9.3%", dr:"22%",dy:"—",   ra:"9.8%", cr:"1.12"},
+  META: {n:"Meta",    m:"us",s:"社交媒体",  p:639.3, pe:27.2, pb:9.8, cap:"1.62T",roe:"37.8%",eps:"23.51",b:"1.24",gm:"81.7%",nm:"38.7%",dr:"10%",dy:"0.3%",ra:"23.6%",cr:"2.76"},
+  TSLA: {n:"特斯拉",  m:"us",s:"新能源车",  p:410.9, pe:379.0,pb:17.2,cap:"1.54T",roe:"4.3%", eps:"1.18", b:"2.25",gm:"17.9%",nm:"3.8%", dr:"24%",dy:"—",   ra:"2.6%", cr:"1.84"},
+  NFLX: {n:"奈飞",    m:"us",s:"流媒体",    p:82.7,  pe:31.1, pb:9.8, cap:"347B", roe:"38.6%",eps:"22.44",b:"1.28",gm:"46.1%",nm:"22.4%",dr:"28%",dy:"—",   ra:"16.4%",cr:"1.18"},
+  BABA: {n:"阿里",    m:"us",s:"电商/云",   p:152.8, pe:18.4, pb:2.3, cap:"390B", roe:"12.6%",eps:"8.31", b:"0.86",gm:"38.2%",nm:"14.6%",dr:"18%",dy:"—",   ra:"6.8%", cr:"1.46"},
+  PDD:  {n:"拼多多",  m:"us",s:"电商",      p:105.4, pe:12.8, pb:3.6, cap:"146B", roe:"31.4%",eps:"8.24", b:"0.91",gm:"61.8%",nm:"26.1%",dr:"6%", dy:"—",   ra:"18.8%",cr:"2.42"},
+  BIDU: {n:"百度",    m:"us",s:"AI/搜索",   p:135.6, pe:11.8, pb:1.0, cap:"47B",  roe:"9.2%", eps:"11.49",b:"0.84",gm:"54.8%",nm:"15.2%",dr:"20%",dy:"—",   ra:"6.2%", cr:"2.82"},
+  JD:   {n:"京东",    m:"us",s:"电商",      p:27.3,  pe:14.6, pb:1.2, cap:"42B",  roe:"8.4%", eps:"1.87", b:"0.74",gm:"9.2%", nm:"2.8%", dr:"28%",dy:"1.6%",ra:"3.1%", cr:"1.06"},
+  V:    {n:"VISA",    m:"us",s:"支付",      p:328.1, pe:30.8, pb:14.6,cap:"670B", roe:"54.0%",eps:"10.66",b:"0.92",gm:"80.6%",nm:"54.2%",dr:"29%",dy:"0.8%",ra:"20.4%",cr:"1.62"},
+  JPM:  {n:"摩根大通",m:"us",s:"银行",      p:302.2, pe:15.2, pb:2.4, cap:"818B", roe:"17.6%",eps:"20.23",b:"1.08",gm:"—",    nm:"29.4%",dr:"—",  dy:"1.9%",ra:"1.6%", cr:"—"},
+  ORCL: {n:"甲骨文",  m:"us",s:"企业软件",  p:157.2, pe:28.2, pb:"—", cap:"410B", roe:"—",    eps:"5.45", b:"0.94",gm:"71.2%",nm:"20.8%",dr:"—",  dy:"1.2%",ra:"6.4%", cr:"0.82"},
+  // A股（人民币计价）
+  "600519":{n:"贵州茅台",m:"cn",s:"白酒",    p:1560, pe:24.8,pb:7.2, cap:"1.96T",roe:"34.1%",eps:"62.88",b:"0.58",gm:"92.1%",nm:"51.2%",dr:"7%", dy:"3.1%",ra:"27.6%",cr:"3.12"},
+  "000858":{n:"五粮液",  m:"cn",s:"白酒",    p:128.6,pe:14.8,pb:3.9, cap:"498B", roe:"29.4%",eps:"8.69", b:"0.68",gm:"76.2%",nm:"35.9%",dr:"10%",dy:"4.1%",ra:"23.8%",cr:"3.28"},
+  "601318":{n:"中国平安",m:"cn",s:"保险",    p:48.6, pe:7.2, pb:0.9, cap:"876B", roe:"14.2%",eps:"6.75", b:"0.82",gm:"—",    nm:"11.6%",dr:"—",  dy:"5.4%",ra:"1.4%", cr:"—"},
+  "600036":{n:"招商银行",m:"cn",s:"银行",    p:36.4, pe:5.2, pb:0.8, cap:"916B", roe:"16.8%",eps:"7.00", b:"0.76",gm:"—",    nm:"34.6%",dr:"—",  dy:"6.2%",ra:"1.4%", cr:"—"},
+  "300750":{n:"宁德时代",m:"cn",s:"新能源",  p:268.4,pe:18.6,pb:3.8, cap:"1.18T",roe:"21.4%",eps:"14.43",b:"1.12",gm:"25.0%",nm:"14.8%",dr:"28%",dy:"1.4%",ra:"10.2%",cr:"1.42"},
+  "002594":{n:"比亚迪",  m:"cn",s:"新能源车",p:334.8,pe:26.4,pb:4.6, cap:"1.07T",roe:"17.8%",eps:"12.68",b:"1.06",gm:"21.9%",nm:"6.4%", dr:"38%",dy:"0.9%",ra:"4.6%", cr:"1.02"},
+  "601888":{n:"中国中免",m:"cn",s:"零售",    p:62.8, pe:18.4,pb:3.2, cap:"130B", roe:"18.6%",eps:"3.41", b:"0.86",gm:"33.8%",nm:"12.8%",dr:"16%",dy:"2.1%",ra:"9.2%", cr:"1.28"},
+  "000001":{n:"平安银行",m:"cn",s:"银行",    p:12.4, pe:4.2, pb:0.6, cap:"240B", roe:"13.2%",eps:"2.95", b:"0.88",gm:"—",    nm:"29.8%",dr:"—",  dy:"5.2%",ra:"1.0%", cr:"—"},
+  // 港股（港元计价）
+  "0700": {n:"腾讯",     m:"hk",s:"科技/游戏",p:478.2,pe:21.6,pb:3.8, cap:"4.51T",roe:"22.4%",eps:"22.14",b:"0.80",gm:"51.4%",nm:"32.6%",dr:"22%",dy:"0.8%",ra:"10.4%",cr:"1.72"},
+  "9988": {n:"阿里(HK)", m:"hk",s:"电商/云",  p:124.8,pe:17.2,pb:2.0, cap:"2.44T",roe:"13.2%",eps:"7.26", b:"0.84",gm:"38.2%",nm:"14.6%",dr:"18%",dy:"—",   ra:"6.8%", cr:"1.46"},
+  "3690": {n:"美团",     m:"hk",s:"本地服务",  p:186.4,pe:32.4,pb:6.2, cap:"1.15T",roe:"21.6%",eps:"5.75", b:"0.94",gm:"28.4%",nm:"10.6%",dr:"20%",dy:"—",   ra:"8.2%", cr:"1.62"},
+  "1299": {n:"友邦保险", m:"hk",s:"保险",      p:56.4, pe:18.6,pb:2.2, cap:"638B", roe:"12.4%",eps:"3.03", b:"0.72",gm:"—",    nm:"15.8%",dr:"—",  dy:"3.1%",ra:"2.8%", cr:"—"},
+  "0941": {n:"中国移动", m:"hk",s:"通信",      p:78.6, pe:10.8,pb:1.3, cap:"1.65T",roe:"12.4%",eps:"7.28", b:"0.56",gm:"29.8%",nm:"16.2%",dr:"12%",dy:"6.4%",ra:"7.8%", cr:"1.26"},
+  "2318": {n:"平安(HK)", m:"hk",s:"保险",      p:42.2, pe:7.2, pb:0.9, cap:"765B", roe:"14.2%",eps:"5.86", b:"0.80",gm:"—",    nm:"11.2%",dr:"—",  dy:"5.8%",ra:"1.2%", cr:"—"},
 };
 
 const QTR=[
@@ -256,7 +267,19 @@ function addInd(data){
   });
 }
 function getPD(t){if(!pd[t])pd[t]=addInd(genPD(DB[t].p));return pd[t];}
-function quote(t){const d=getPD(t),l=d[d.length-1],p=d[d.length-2],c=l.c-p.c,pct=((c/p.c)*100).toFixed(2);return{price:l.c,chg:c,pct,up:c>=0};}
+
+// live price store declared BEFORE quote() so it's always initialized
+const live = {};
+Object.keys(DB).forEach(t => { live[t] = { price: DB[t].p, open: DB[t].p }; });
+
+function quote(t){
+  if(live[t]){
+    const price=live[t].price,open=live[t].open,chg=+(price-open).toFixed(2),pct=((chg/open)*100).toFixed(2);
+    return{price,chg,pct,up:chg>=0};
+  }
+  const d=getPD(t),l=d[d.length-1],p=d[d.length-2],c=l.c-p.c,pct=((c/p.c)*100).toFixed(2);
+  return{price:l.c,chg:c,pct,up:c>=0};
+}
 
 const CD={responsive:true,maintainAspectRatio:false,
   plugins:{legend:{display:false},tooltip:{backgroundColor:"#0d0d12",borderColor:"rgba(0,232,122,.3)",borderWidth:1,titleColor:"#9090a8",bodyColor:"#c8c8d8",titleFont:{family:"monospace",size:10},bodyFont:{family:"monospace",size:11},padding:10,mode:"index",intersect:false}},
@@ -448,7 +471,8 @@ function addToCompare(){
     if(cmpList.length>=4){showToast("最多对比4只","warn");return;}
     cmpList.push(cur); showToast(`已添加 ${cur} 到对比`,"success");
   }
-  switchTab("cp",document.querySelector(".tab-bar .tab:nth-child(4)"));
+  const cpTab=document.querySelector(".tab-bar .tab:nth-child(4)");
+  switchTab("cp",cpTab);
 }
 function renderCP(){
   if(!cmpList.length){document.getElementById("content").innerHTML='<div class="empty">点击顶部 ⚖️ 对比 按钮<br>将股票加入对比列表<br><br><span style="font-size:10px">最多同时对比 4 只股票</span></div>';return;}
@@ -545,6 +569,106 @@ if("Notification"in window&&Notification.permission==="default")setTimeout(()=>N
 
 // INIT
 renderSB(); load("AAPL");
+
+// ── REAL-TIME PRICE ENGINE ──────────────────────────────────────────────────
+const TICK_INTERVAL = 1500;
+const VOLATILITY = {
+  TSLA:0.0022, NVDA:0.0020, BIDU:0.0018, META:0.0016, NFLX:0.0015,
+  AAPL:0.0010, MSFT:0.0009, GOOGL:0.0010, AMZN:0.0011, V:0.0008,
+  "300750":0.0014, "002594":0.0013, "600519":0.0007,
+};
+const DEFAULT_VOL = 0.0010;
+
+function tickPrice(t) {
+  const vol = VOLATILITY[t] || DEFAULT_VOL;
+  const drift = (Math.random() - 0.492) * vol;
+  live[t].price = +(live[t].price * (1 + drift)).toFixed(2);
+}
+
+// Append new price point to pd cache
+function pushLiveCandle(t) {
+  const arr = getPD(t);
+  const last = arr[arr.length - 1];
+  const newC = live[t].price;
+  const updated = { ...last, c: newC };
+  arr[arr.length - 1] = updated;
+  // recompute last indicator (lightweight update)
+  const i = arr.length - 1;
+  const s20 = arr.slice(Math.max(0, i - 19), i + 1);
+  updated.ma20 = +(s20.reduce((a, x) => a + x.c, 0) / s20.length).toFixed(2);
+}
+
+function updateHero() {
+  const q = quote(cur);
+  const priceEl = document.getElementById("hprice");
+  const chgEl   = document.getElementById("hchg");
+  if (!priceEl || !chgEl) return;
+  const prev = parseFloat(priceEl.textContent);
+  priceEl.textContent = q.price.toFixed(2);
+  chgEl.textContent = `${q.up ? '▲' : '▼'} ${Math.abs(q.chg).toFixed(2)} (${q.up ? '+' : ''}${q.pct}%)`;
+  chgEl.className = `hero-chg ${q.up ? 'up' : 'dn'}`;
+  if (q.price !== prev) {
+    priceEl.style.animation = "none";
+    void priceEl.offsetWidth;
+    priceEl.style.animation = q.price > prev ? "flash-up .6s ease" : "flash-dn .6s ease";
+  }
+}
+
+function updateSBPrices() {
+  document.querySelectorAll(".stock-item").forEach(el => {
+    const t = el.querySelector(".si-code")?.textContent;
+    if (!t || !live[t]) return;
+    const q = quote(t);
+    const priceEl = el.querySelector(".si-price");
+    const pctEl   = el.querySelector(".si-pct");
+    if (!priceEl || !pctEl) return;
+    const prev = parseFloat(priceEl.textContent);
+    priceEl.textContent = q.price.toFixed(2);
+    pctEl.textContent   = `${q.up ? '▲' : '▼'}${Math.abs(+q.pct)}%`;
+    pctEl.className     = `si-pct ${q.up ? 'up' : 'dn'}`;
+    if (q.price !== prev) {
+      el.style.animation = "none";
+      void el.offsetWidth;
+      el.style.animation = q.price > prev ? "flash-up .6s ease" : "flash-dn .6s ease";
+    }
+  });
+}
+
+// Live chart update: push new data point to active chart
+function updateActiveChart() {
+  if (tab === "ov") {
+    const c = ch["cv-price"];
+    if (c) {
+      const disp = getPD(cur).slice(-60);
+      c.data.datasets[0].data = disp.map(d => d.c);
+      c.data.datasets[1].data = disp.map(d => d.ma20);
+      c.update("none"); // no animation for speed
+    }
+  } else if (tab === "ch") {
+    const c = ch["cv-main"];
+    if (c && c.config?.type === "line") {
+      const disp = getPD(cur).slice(-60);
+      c.data.datasets[0].data = disp.map(d => d.c);
+      if (c.data.datasets[1]) c.data.datasets[1].data = disp.map(d => d.ma20);
+      c.update("none");
+    }
+  }
+}
+
+let tickCount = 0;
+function onTick() {
+  tickCount++;
+  Object.keys(DB).forEach(t => {
+    tickPrice(t);
+    pushLiveCandle(t);
+    checkAL(t, live[t].price);
+  });
+  updateHero();
+  updateSBPrices();
+  if (tickCount % 3 === 0) updateActiveChart();
+}
+
+setInterval(onTick, TICK_INTERVAL);
 </script>
 </body>
 </html>
